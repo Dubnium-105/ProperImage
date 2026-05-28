@@ -9,7 +9,12 @@
 #
 
 """Minimal setup.py for backwards compatibility.
-All configuration is in pyproject.toml.
+
+All package metadata, dependencies, and optional GPU extras are configured in
+pyproject.toml. Install GPU support with extras such as:
+
+    pip install properimage[gpu-cu12]
+    pip install properimage[gpu-cu11]
 """
 
 from setuptools import setup

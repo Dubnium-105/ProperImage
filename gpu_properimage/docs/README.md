@@ -5,7 +5,8 @@ This folder records acceleration plan 7, the CuPy/cuFFT implementation for
 
 ## User-Facing GPU Usage
 
-The GPU backend is explicit and opt-in:
+The public API defaults to `use_gpu="auto"`: it tries the CuPy/cuFFT backend
+first and falls back to CPU when GPU support is unavailable.
 
 ```python
 from properimage.operations import subtract
@@ -16,20 +17,24 @@ D, P, Scorr, mask = subtract(
     fitted_psf=True,
     beta=True,
     shift=True,
-    use_gpu=True,
 )
 ```
 
-Install a CuPy wheel that matches the local CUDA runtime before enabling
-`use_gpu=True`. For CUDA 12 installations:
+Install the GPU extra matching the local CUDA runtime before relying on the
+automatic GPU path. For CUDA 12 installations:
 
 ```console
-python -m pip install cupy-cuda12x
+python -m pip install properimage[gpu-cu12]
 ```
 
-For other CUDA versions, use the matching CuPy package documented by CuPy. If
-CuPy is missing or cannot load the CUDA runtime, `subtract(..., use_gpu=True)`
-raises a `RuntimeError`; omitting `use_gpu` keeps the original CPU path.
+For CUDA 11 installations, use `properimage[gpu-cu11]`. Set `use_gpu=True` to
+require GPU and raise an error if CuPy/CUDA cannot be used. Set
+`use_gpu=False` to force the CPU backend.
+
+On Windows, some CuPy installations need NVRTC DLLs from another CUDA package.
+If a CUDA-enabled Torch wheel is installed, ProperImage will automatically
+expose Torch's CUDA DLL directory to the current process before checking the
+CuPy backend.
 
 ## What Runs On GPU
 

@@ -63,6 +63,14 @@ dependencies = [
     "attrs",
 ]
 
+[project.optional-dependencies]
+gpu-cu11 = [
+    "cupy-cuda11x>=13",
+]
+gpu-cu12 = [
+    "cupy-cuda12x>=13",
+]
+
 [tool.setuptools]
 include-package-data = true
 

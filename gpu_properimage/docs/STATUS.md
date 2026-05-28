@@ -19,11 +19,12 @@
 - PSF rendering and background estimation.
 
 **Implemented**:
-- Added `subtract(..., use_gpu=True)` as an explicit CuPy/cuFFT backend.
+- Added `subtract(..., use_gpu="auto")` as the default path, preferring
+  CuPy/cuFFT when available and falling back to CPU otherwise.
+- `use_gpu=True` strictly requires GPU, while `use_gpu=False` forces CPU.
 - Added a CuPy Fourier-domain shift implementation for the GPU path.
 - Kept residual images and masks on GPU inside optimizer callbacks, returning
   only scalar costs to SciPy.
-- Preserved the existing CPU path as the default behavior.
 - Normalized scalar masks to full-size boolean masks so real FITS inputs work
   in the optimizer cost slicing path.
 - Added benchmark and export scripts under `gpu_properimage/benchmarks/`.

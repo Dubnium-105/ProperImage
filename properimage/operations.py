@@ -17,6 +17,8 @@ astronomical images.
 """
 
 import logging
+import os
+from pathlib import Path
 import time
 import warnings
 
@@ -56,6 +58,8 @@ logger = logging.getLogger(__name__)
 aa.PIXEL_TOL = 0.5
 eps = np.finfo(np.float64).eps
 OPT_BORDER = 100  # Border size for optimization cost calculation
+_GPU_BACKEND_ERROR = None
+_GPU_BACKEND_READY = None
 
 
 def _cupy_fourier_shift(array, shift):
@@ -71,15 +75,30 @@ def _cupy_fourier_shift(array, shift):
 
 def _resolve_fft_backend(use_gpu):
     """Return FFT helpers for the requested backend."""
-    if not use_gpu:
+    if use_gpu in (False, "off", "cpu", None):
         return np, _fftwn, _ifftwn, fourier_shift, np.asarray, False
 
-    if cp is None:
-        raise RuntimeError(
-            "subtract(use_gpu=True) requires CuPy. Install a CUDA-matched "
-            "CuPy package such as cupy-cuda12x or call subtract with "
-            "use_gpu=False."
+    if use_gpu in (True, "on", "gpu"):
+        strict_gpu = True
+    elif use_gpu == "auto":
+        strict_gpu = False
+    else:
+        raise ValueError(
+            "use_gpu must be one of True, False, or 'auto'."
         )
+
+    if not _cupy_backend_ready():
+        message = (
+            "CuPy/cuFFT backend is unavailable. Install a CUDA-matched "
+            "CuPy extra such as properimage[gpu-cu12] or "
+            "properimage[gpu-cu11]."
+        )
+        if _GPU_BACKEND_ERROR is not None:
+            message = f"{message} Original error: {_GPU_BACKEND_ERROR}"
+        if strict_gpu:
+            raise RuntimeError(message)
+        logger.info("%s Falling back to CPU FFT backend.", message)
+        return np, _fftwn, _ifftwn, fourier_shift, np.asarray, False
 
     return (
         cp,
@@ -89,6 +108,54 @@ def _resolve_fft_backend(use_gpu):
         cp.asnumpy,
         True,
     )
+
+
+def _cupy_backend_ready():
+    """Check whether CuPy can run a small FFT on the active CUDA device."""
+    global _GPU_BACKEND_ERROR, _GPU_BACKEND_READY
+
+    if _GPU_BACKEND_READY is not None:
+        return _GPU_BACKEND_READY
+
+    if cp is None:
+        _GPU_BACKEND_ERROR = "CuPy is not installed."
+        _GPU_BACKEND_READY = False
+        return False
+
+    _add_torch_cuda_dll_directory()
+
+    try:
+        if cp.cuda.runtime.getDeviceCount() < 1:
+            raise RuntimeError("No CUDA devices were reported by CuPy.")
+        probe = cp.ones((4, 4), dtype=cp.float32)
+        cp.fft.fftn(probe)
+        cp.cuda.Stream.null.synchronize()
+        _GPU_BACKEND_READY = True
+        _GPU_BACKEND_ERROR = None
+    except Exception as exc:
+        _GPU_BACKEND_READY = False
+        _GPU_BACKEND_ERROR = exc
+    return _GPU_BACKEND_READY
+
+
+def _add_torch_cuda_dll_directory():
+    """Expose CUDA DLLs bundled by optional Torch wheels when present."""
+    try:
+        import torch
+    except ImportError:
+        return
+
+    torch_lib = Path(torch.__file__).resolve().parent / "lib"
+    if not torch_lib.exists():
+        return
+
+    current_path = os.environ.get("PATH", "")
+    torch_lib_text = str(torch_lib)
+    path_parts = current_path.split(os.pathsep) if current_path else []
+    if torch_lib_text not in path_parts:
+        os.environ["PATH"] = f"{torch_lib}{os.pathsep}{current_path}"
+    if hasattr(os, "add_dll_directory"):
+        os.add_dll_directory(torch_lib_text)
 
 
 def subtract(
@@ -101,7 +168,7 @@ def subtract(
     shift=True,
     iterative=False,
     fitted_psf=True,
-    use_gpu=False,
+    use_gpu="auto",
 ):
     """
     Subtract a pair of SingleImage instances.
@@ -129,9 +196,11 @@ def subtract(
     fitted_psf : bool
         Whether to use a Gaussian fitted PSF. Overrides the use of
         auto-psf determination. Default to True.
-    use_gpu : bool
+    use_gpu : bool or "auto"
         Whether to use CuPy/cuFFT for the FFT-heavy subtraction path.
-        Default is False. Requires a CUDA-matched CuPy installation.
+        Default is "auto", which uses GPU when a compatible CuPy/CUDA
+        backend is available and otherwise falls back to CPU. Set True to
+        require GPU or False to force CPU.
 
     Returns:
     --------

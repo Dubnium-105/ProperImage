@@ -13,6 +13,9 @@
 """
 Setuptools bootstrapping installer.
 Run this script to install or upgrade setuptools.
+
+Package dependencies and optional GPU extras are configured in pyproject.toml,
+not in this legacy bootstrap helper.
 """
 
 import os

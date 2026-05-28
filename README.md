@@ -29,6 +29,13 @@ To install from PyPI
 $ pip install properimage
 ```
 
+To install GPU support, choose the extra matching your CUDA runtime:
+
+```console
+$ pip install properimage[gpu-cu12]
+$ pip install properimage[gpu-cu11]
+```
+
 ## Quick usage
 
 ### PSF estimation
@@ -53,13 +60,13 @@ Where `D`, `P`, `Scorr` refer to the images defined by the same name in [Zackay 
 
 ### GPU-accelerated subtraction
 
-`subtract()` also has an opt-in CuPy/cuFFT backend for the FFT-heavy
-subtraction path. The CPU path remains the default. To use the GPU path, install
-a CuPy wheel that matches your local CUDA runtime, then pass `use_gpu=True`.
-For CUDA 12 installations:
+`subtract()` can use a CuPy/cuFFT backend for the FFT-heavy subtraction path.
+By default, `use_gpu="auto"` tries GPU first and falls back to CPU when a
+compatible CuPy/CUDA runtime is not available. Install the GPU extra matching
+your CUDA runtime to make the automatic GPU path available. For CUDA 12:
 
 ```console
-$ pip install cupy-cuda12x
+$ pip install properimage[gpu-cu12]
 ```
 
 ```python
@@ -70,13 +77,19 @@ $ pip install cupy-cuda12x
 ...     fitted_psf=True,
 ...     beta=True,
 ...     shift=True,
-...     use_gpu=True,
 ... )
 ```
 
-If CuPy is not installed, or if it does not match the available CUDA runtime,
-`use_gpu=True` raises a `RuntimeError` with an installation hint. Leave
-`use_gpu=False` or omit the argument to use the existing CPU backend.
+Use `use_gpu=True` to require GPU and raise an error if CuPy/CUDA is not
+available. Use `use_gpu=False` to force the CPU backend.
+
+For new users, GPU installation does not change the public subtraction API:
+existing code such as `subtract(ref, new)` continues to work. The only runtime
+behavior change is that, when a compatible GPU backend is installed,
+`use_gpu="auto"` may choose CuPy/cuFFT instead of the CPU FFT backend. Results
+should be numerically close but may not be bit-for-bit identical because the FFT
+backend changes. Integrated systems that require the previous CPU-only behavior
+can keep it by passing `use_gpu=False`.
 
 Current GPU coverage is focused on FFT/IFFT, Fourier-domain shifts, and the
 repeated optimizer residual calculations. Image loading, PSF modeling,
