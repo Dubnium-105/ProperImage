@@ -1,0 +1,40 @@
+# Acceleration Plan 7 Production Benchmark
+
+Date: 2026-05-28
+
+## Environment
+
+- GPU: NVIDIA GeForce RTX 5070, 12 GB VRAM
+- Driver: 595.79
+- CUDA runtime used by benchmark: Torch CUDA 12.8
+- Python: `E:\application\py395\python.exe` 3.9.5
+- NumPy: 1.26.4
+- SciPy: 1.13.1
+- Torch: 2.7.0+cu128
+- CuPy: unavailable in this environment because package installation was
+  blocked by the configured network/proxy.
+
+## Command
+
+```powershell
+& "E:\application\py395\python.exe" `
+  gpu_properimage\benchmarks\benchmark_accel7_production.py `
+  --pixels 1024 2048 4096 `
+  --repeats 3 `
+  --output gpu_properimage\docs\accel7_production_benchmark.csv
+```
+
+The benchmark uses the same cuFFT-backed workload shape intended by plan 7:
+FFT/IFFT subtraction core, Fourier-domain shift, scalar solve callbacks, result
+copy, and persistent GPU tensors. A per-size warmup is excluded to approximate a
+production persistent service.
+
+## Results
+
+| Pixels | K | P | Bkg | D | Auto | Pipeline mean ms | Persistent mean ms | CPU mean ms | Speedup | Persistent speedup | Kernel ms | H2D copy ms | Init ms | Image alloc ms | Result copy ms | Solve ms | Cleanup ms | GPU RAM peak delta MB | GPU VRAM peak delta MB | CPU RAM peak delta MB | Symmetry max abs | Max abs M error | Max abs b error | Finite |
+|---:|---:|---:|---:|---:|:---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---|
+| 1024 | 21 | 2 | 1 | 4096 | True | 5.4414 | 2.4386 | 122.6203 | 22.5347 | 50.2838 | 1.0171 | 1.1205 | 0.1131 | 0.0112 | 0.6970 | 0.7118 | 0.7786 | 4.2422 | 92.0088 | 85.1328 | 0.0000 | 0.0531 | 0.0003 | True |
+| 2048 | 21 | 2 | 1 | 16384 | True | 16.5442 | 8.5503 | 523.2522 | 31.6275 | 61.1967 | 3.1246 | 3.2845 | 0.1131 | 0.0116 | 2.5884 | 2.8247 | 2.2644 | 12.1367 | 368.0127 | 352.4023 | 0.0000 | 0.0483 | 0.0004 | True |
+| 4096 | 21 | 2 | 1 | 65536 | True | 76.0751 | 52.7228 | 2155.5411 | 28.3344 | 40.8845 | 19.4606 | 12.2720 | 0.1391 | 0.0126 | 14.2209 | 17.7115 | 6.9080 | 128.0273 | 1472.0205 | 1408.4922 | 0.0000 | 0.0233 | 0.0008 | True |
+
+Raw CSV: `gpu_properimage/docs/accel7_production_benchmark.csv`

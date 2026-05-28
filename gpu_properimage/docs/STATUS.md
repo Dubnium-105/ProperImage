@@ -7,7 +7,7 @@
 | 方案 | 路径 | 方法 | 仓库 | 进度 |
 |------|------|------|------|------|
 | 方案7 | FFT频域 | CuPy/cuFFT | **本仓库** | 📋 规划中 |
-| 方案8 | 空间域 | CUDA fused kernel | Dubnium-105/ois | 🔧 TDD Step 1 完成 |
+| 方案8 | 空间域 | CUDA fused kernel | Dubnium-105/ois | 🔧 gpu-ois-v0.2分支 完成TDD |
 
 ### 方案7 详细状态
 
@@ -36,6 +36,5 @@
 
 ### 完整分析文档
 
-交叉验证报告: 见 A.S.T.R.A. + codex-proxy 对话记录
 GPU 加速方案: 见本文件及 PLAN.md
 项目规格: Dubnium-105/ois/gpu_ois/docs/ (SPEC.md, ARCH.md, API.md 等)

@@ -19,3 +19,19 @@ Key challenges:
 
 ## Expected speedup
 8-20x for 4096² images on RTX 3060+
+
+## Implementation status
+- Added `subtract(..., use_gpu=True)` as an explicit opt-in GPU path.
+- The subtraction FFT/IFFT chain now uses CuPy/cuFFT when enabled.
+- Added a CuPy implementation of `scipy.ndimage.fourier_shift` for frequency
+  domain arrays, keeping shift operations on GPU.
+- Optimization callbacks keep full image residuals and masks on GPU, returning
+  only scalar costs to SciPy.
+- CPU behavior remains the default and still uses the existing NumPy/pyFFTW
+  backend.
+
+## Remaining CPU sections
+- `SingleImage` construction, PSF modeling/rendering, and SEP background
+  estimation remain CPU-side.
+- `scipy.optimize` remains CPU-side, but its repeated FFT/IFFT work can now
+  execute on GPU.

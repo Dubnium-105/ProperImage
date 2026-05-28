@@ -51,6 +51,17 @@ To create a proper-subtraction of images:
 
 Where `D`, `P`, `Scorr` refer to the images defined by the same name in [Zackay & Ofek](https://iopscience.iop.org/article/10.3847/0004-637X/830/1/27/meta) paper.
 
+For CUDA acceleration, install a CuPy build that matches your CUDA runtime and
+enable the FFT backend explicitly:
+
+```console
+$ pip install cupy-cuda12x
+```
+
+```python
+>>> D, P, Scorr, mask = subtract(ref=ref_path, new=new_path, use_gpu=True)
+```
+
 For the full documentation refer to [readthedocs](https://properimage.readthedocs.io).
 
 ## Rerefences

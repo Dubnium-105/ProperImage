@@ -38,6 +38,11 @@ from . import utils as u
 from .single_image import SingleImage as si
 
 try:
+    import cupy as cp
+except Exception:  # pragma: no cover - depends on optional GPU extra
+    cp = None
+
+try:
     import pyfftw
 
     _fftwn = pyfftw.interfaces.numpy_fft.fftn  # noqa
@@ -53,6 +58,39 @@ eps = np.finfo(np.float64).eps
 OPT_BORDER = 100  # Border size for optimization cost calculation
 
 
+def _cupy_fourier_shift(array, shift):
+    """CuPy equivalent of scipy.ndimage.fourier_shift for complex FFT data."""
+    phase = cp.zeros(array.shape, dtype=cp.float64)
+    for axis, amount in enumerate(shift):
+        axis_shape = [1] * array.ndim
+        axis_shape[axis] = array.shape[axis]
+        frequencies = cp.fft.fftfreq(array.shape[axis]).reshape(axis_shape)
+        phase = phase + frequencies * amount
+    return array * cp.exp(-2j * cp.pi * phase)
+
+
+def _resolve_fft_backend(use_gpu):
+    """Return FFT helpers for the requested backend."""
+    if not use_gpu:
+        return np, _fftwn, _ifftwn, fourier_shift, np.asarray, False
+
+    if cp is None:
+        raise RuntimeError(
+            "subtract(use_gpu=True) requires CuPy. Install a CUDA-matched "
+            "CuPy package such as cupy-cuda12x or call subtract with "
+            "use_gpu=False."
+        )
+
+    return (
+        cp,
+        cp.fft.fftn,
+        cp.fft.ifftn,
+        _cupy_fourier_shift,
+        cp.asnumpy,
+        True,
+    )
+
+
 def subtract(
     ref,
     new,
@@ -63,6 +101,7 @@ def subtract(
     shift=True,
     iterative=False,
     fitted_psf=True,
+    use_gpu=False,
 ):
     """
     Subtract a pair of SingleImage instances.
@@ -90,6 +129,9 @@ def subtract(
     fitted_psf : bool
         Whether to use a Gaussian fitted PSF. Overrides the use of
         auto-psf determination. Default to True.
+    use_gpu : bool
+        Whether to use CuPy/cuFFT for the FFT-heavy subtraction path.
+        Default is False. Requires a CUDA-matched CuPy installation.
 
     Returns:
     --------
@@ -144,6 +186,8 @@ def subtract(
     if new.data.data.shape != ref.data.data.shape:
         raise ValueError("N and R arrays are of different size")
 
+    xp, fftn, ifftn, fshift, to_cpu, using_gpu = _resolve_fft_backend(use_gpu)
+
     t0 = time.time()
     mix_mask = np.ma.mask_or(new.data.mask, ref.data.mask)
 
@@ -185,8 +229,8 @@ def subtract(
         if dx_new < 0.0 or dy_new < 0.0:
             raise ValueError("Impossible to acquire center of PSF in stamp")
 
-    psf_ref_hat = _fftwn(p_r, s=ref.data.shape, norm="ortho")
-    psf_new_hat = _fftwn(p_n, s=new.data.shape, norm="ortho")
+    psf_ref_hat = fftn(xp.asarray(p_r), s=ref.data.shape, norm="ortho")
+    psf_new_hat = fftn(xp.asarray(p_n), s=new.data.shape, norm="ortho")
 
     psf_ref_hat[psf_ref_hat.real == 0] = eps
     psf_new_hat[psf_new_hat.real == 0] = eps
@@ -194,36 +238,59 @@ def subtract(
     psf_ref_hat_conj = psf_ref_hat.conj()
     psf_new_hat_conj = psf_new_hat.conj()
 
-    D_hat_r = fourier_shift(psf_new_hat * ref.interped_hat, (-dx_new, -dy_new))
-    D_hat_n = fourier_shift(psf_ref_hat * new.interped_hat, (-dx_ref, -dy_ref))
+    if using_gpu:
+        ref_interped_hat = fftn(xp.asarray(ref.interped), norm="ortho")
+        new_interped_hat = fftn(xp.asarray(new.interped), norm="ortho")
+    else:
+        ref_interped_hat = ref.interped_hat
+        new_interped_hat = new.interped_hat
+
+    D_hat_r = fshift(psf_new_hat * ref_interped_hat, (-dx_new, -dy_new))
+    D_hat_n = fshift(psf_ref_hat * new_interped_hat, (-dx_ref, -dy_ref))
 
     norm_b = ref.var**2 * psf_new_hat * psf_new_hat_conj
     norm_a = new.var**2 * psf_ref_hat * psf_ref_hat_conj
 
     new_back = sep.Background(new.interped).back()
     ref_back = sep.Background(ref.interped).back()
-    gamma = new_back - ref_back
+    gamma = xp.asarray(new_back - ref_back)
+    backend_mask = xp.asarray(mix_mask) if using_gpu else mix_mask
     b = n_zp / r_zp
-    norm = np.sqrt(norm_a + norm_b * b**2)
+    norm = xp.sqrt(norm_a + norm_b * b**2)
+
+    def to_scalar(value):
+        return float(to_cpu(value)) if using_gpu else value
+
+    def masked_abs_sum(array, border=0, mean_normalized=False):
+        real_array = array.real
+        mask = backend_mask
+        if border:
+            real_array = real_array[border:-border, border:-border]
+            mask = mask[border:-border, border:-border]
+        real_array = xp.where(mask, 0, real_array)
+        scale = real_array.shape[0] * real_array.shape[1]
+        if mean_normalized:
+            real_array = real_array / scale
+        value = xp.sum(xp.abs(real_array))
+        return to_scalar(value)
+
     if beta:
         if shift:  # beta==True & shift==True
 
             def cost(vec):
                 b, dx, dy = vec
-                gammap = gamma / np.sqrt(new.var**2 + b**2 * ref.var**2)
-                norm = np.sqrt(norm_a + norm_b * b**2)
+                gammap = gamma / xp.sqrt(new.var**2 + b**2 * ref.var**2)
+                norm = xp.sqrt(norm_a + norm_b * b**2)
                 dhn = D_hat_n / norm
                 dhr = D_hat_r / norm
                 b_n = (
-                    _ifftwn(dhn, norm="ortho")
-                    - _ifftwn(fourier_shift(dhr, (dx, dy)), norm="ortho") * b
-                    - np.roll(gammap, (int(round(dx)), int(round(dy))))
+                    ifftn(dhn, norm="ortho")
+                    - ifftn(fshift(dhr, (dx, dy)), norm="ortho") * b
+                    - xp.roll(gammap, (int(round(dx)), int(round(dy))))
                 )
-                chi = np.ma.MaskedArray(b_n.real, mask=mix_mask, fill_value=0)
-                chi = chi[OPT_BORDER:-OPT_BORDER, OPT_BORDER:-OPT_BORDER]
-                chi = np.sum(np.abs(chi / (chi.shape[0] * chi.shape[1])))
-
-                return chi
+                return masked_abs_sum(
+                    b_n, border=OPT_BORDER, mean_normalized=True
+                )
 
             ti = time.time()
             vec0 = [b, 0.0, 0.0]
@@ -254,17 +321,16 @@ def subtract(
         elif iterative:  # beta==True & shift==False & iterative==True
 
             def F(b):
-                gammap = gamma / np.sqrt(new.var**2 + b**2 * ref.var**2)
-                norm = np.sqrt(norm_a + norm_b * b**2)
+                gammap = gamma / xp.sqrt(new.var**2 + b**2 * ref.var**2)
+                norm = xp.sqrt(norm_a + norm_b * b**2)
                 b_n = (
-                    _ifftwn(D_hat_n / norm, norm="ortho")
+                    ifftn(D_hat_n / norm, norm="ortho")
                     - gammap
-                    - b * _ifftwn(D_hat_r / norm, norm="ortho")
+                    - b * ifftn(D_hat_r / norm, norm="ortho")
                 )
                 # robust_stats = lambda b: sigma_clipped_stats(
                 #    b_n(b).real[100:-100, 100:-100])
-                cost = np.ma.MaskedArray(b_n.real, mask=mix_mask, fill_value=0)
-                return np.sum(np.abs(cost))
+                return masked_abs_sum(b_n)
 
             ti = time.time()
             solv_beta = optimize.minimize_scalar(
@@ -287,15 +353,14 @@ def subtract(
         else:  # beta==True & shift==False & iterative==False
 
             def F(b):
-                gammap = gamma / np.sqrt(new.var**2 + b**2 * ref.var**2)
-                norm = np.sqrt(norm_a + norm_b * b**2)
+                gammap = gamma / xp.sqrt(new.var**2 + b**2 * ref.var**2)
+                norm = xp.sqrt(norm_a + norm_b * b**2)
                 b_n = (
-                    _ifftwn(D_hat_n / norm, norm="ortho")
+                    ifftn(D_hat_n / norm, norm="ortho")
                     - gammap
-                    - b * _ifftwn(D_hat_r / norm, norm="ortho")
+                    - b * ifftn(D_hat_r / norm, norm="ortho")
                 )
-                cost = np.ma.MaskedArray(b_n.real, mask=mix_mask, fill_value=0)
-                return np.sum(np.abs(cost))
+                return masked_abs_sum(b_n)
 
             ti = time.time()
             solv_beta = optimize.least_squares(
@@ -309,7 +374,7 @@ def subtract(
                 logger.info(
                     "The solution was with cost {}".format(solv_beta.cost)
                 )
-                b = solv_beta.x
+                b = float(solv_beta.x[0])
             else:
                 logger.info("Least squares could not find our beta  :(")
                 logger.info("Beta is overriden to be the zp ratio again")
@@ -317,22 +382,21 @@ def subtract(
             dx = dy = 0.0
     else:
         if shift:  # beta==False & shift==True
-            gammap = gamma / np.sqrt(new.var**2 + b**2 * ref.var**2)
-            norm = np.sqrt(norm_a + norm_b * b**2)
+            gammap = gamma / xp.sqrt(new.var**2 + b**2 * ref.var**2)
+            norm = xp.sqrt(norm_a + norm_b * b**2)
             dhn = D_hat_n / norm
             dhr = D_hat_r / norm
 
             def cost(vec):
                 dx, dy = vec
                 b_n = (
-                    _ifftwn(dhn, norm="ortho")
-                    - _ifftwn(fourier_shift(dhr, (dx, dy)), norm="ortho") * b
-                    - np.roll(gammap, (int(round(dx)), int(round(dy))))
+                    ifftn(dhn, norm="ortho")
+                    - ifftn(fshift(dhr, (dx, dy)), norm="ortho") * b
+                    - xp.roll(gammap, (int(round(dx)), int(round(dy))))
                 )
-                chi = np.ma.MaskedArray(b_n.real, mask=mix_mask, fill_value=0)
-                chi = chi[OPT_BORDER:-OPT_BORDER, OPT_BORDER:-OPT_BORDER]
-                chi = np.sum(np.abs(chi / (chi.shape[0] * chi.shape[1])))
-                return chi
+                return masked_abs_sum(
+                    b_n, border=OPT_BORDER, mean_normalized=True
+                )
 
             ti = time.time()
             vec0 = [0.0, 0.0]
@@ -366,20 +430,22 @@ def subtract(
     norm = norm_a + norm_b * b**2
 
     if dx == 0.0 and dy == 0.0:
-        D_hat = (D_hat_n - b * D_hat_r) / np.sqrt(norm)
+        D_hat = (D_hat_n - b * D_hat_r) / xp.sqrt(norm)
     else:
-        D_hat = (D_hat_n - fourier_shift(b * D_hat_r, (dx, dy))) / np.sqrt(
+        D_hat = (D_hat_n - fshift(b * D_hat_r, (dx, dy))) / xp.sqrt(
             norm
         )
 
-    D = _ifftwn(D_hat, norm="ortho")
-    if np.any(np.isnan(D.real)):
+    D = ifftn(D_hat, norm="ortho")
+    has_nan = to_scalar(xp.any(xp.isnan(D.real)))
+    if bool(has_nan):
         logger.warning("NaN values detected in D.real array after inverse FFT")
 
-    d_zp = b / np.sqrt(ref.var**2 * b**2 + new.var**2)
-    P_hat = (psf_ref_hat * psf_new_hat * b) / (np.sqrt(norm) * d_zp)
+    d_zp = b / xp.sqrt(ref.var**2 * b**2 + new.var**2)
+    P_hat = (psf_ref_hat * psf_new_hat * b) / (xp.sqrt(norm) * d_zp)
 
-    P = _ifftwn(P_hat, norm="ortho").real
+    P = ifftn(P_hat, norm="ortho").real
+    P = to_cpu(P) if using_gpu else P
     dx_p, dy_p = center_of_mass(P)
 
     dx_pk, dy_pk = [val[0] for val in np.where(P == np.max(P))]
@@ -388,31 +454,33 @@ def subtract(
         dx_p = dx_pk
         dy_p = dy_pk
 
-    S_hat = fourier_shift(d_zp * D_hat * P_hat.conj(), (dx_p, dy_p))
+    S_hat = fshift(d_zp * D_hat * P_hat.conj(), (dx_p, dy_p))
 
-    kr = _ifftwn(
+    kr = ifftn(
         new.zp * psf_ref_hat_conj * b * psf_new_hat * psf_new_hat_conj / norm,
         norm="ortho",
     )
 
-    kn = _ifftwn(
+    kn = ifftn(
         new.zp * psf_new_hat_conj * psf_ref_hat * psf_ref_hat_conj / norm,
         norm="ortho",
     )
 
-    V_en = _ifftwn(
-        _fftwn(new.data.filled(0) + 1.0, norm="ortho")
-        * _fftwn(kn**2, s=new.data.shape),
+    V_en = ifftn(
+        fftn(xp.asarray(new.data.filled(0) + 1.0), norm="ortho")
+        * fftn(kn**2, s=new.data.shape),
         norm="ortho",
     )
 
-    V_er = _ifftwn(
-        _fftwn(ref.data.filled(0) + 1.0, norm="ortho")
-        * _fftwn(kr**2, s=ref.data.shape),
+    V_er = ifftn(
+        fftn(xp.asarray(ref.data.filled(0) + 1.0), norm="ortho")
+        * fftn(kr**2, s=ref.data.shape),
         norm="ortho",
     )
 
-    S_corr = _ifftwn(S_hat, norm="ortho") / np.sqrt(V_en + V_er)
+    S_corr = ifftn(S_hat, norm="ortho") / xp.sqrt(V_en + V_er)
+    D = to_cpu(D) if using_gpu else D
+    S_corr = to_cpu(S_corr) if using_gpu else S_corr
     logger.info("S_corr sigma_clipped_stats ")
     logger.info(
         "mean = {}, median = {}, std = {}\n".format(
