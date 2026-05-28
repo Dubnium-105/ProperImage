@@ -67,6 +67,7 @@ CPU/GPU comparison for a single real pair:
 python gpu_properimage/benchmarks/real_data_subtract_cpu_gpu.py \
   --ref data/aligned_eso085-030-004.fit \
   --new data/aligned_eso085-030-005.fit \
+  --modes fixed_beta_no_shift default_beta_shift \
   --output gpu_properimage/docs/real_data_subtract_cpu_gpu.csv
 ```
 
@@ -76,6 +77,7 @@ CPU/GPU comparison for paired folders:
 python gpu_properimage/benchmarks/real_data_subtract_cpu_gpu.py \
   --ref-dir data/ref \
   --new-dir data/new \
+  --modes fixed_beta_no_shift default_beta_shift \
   --output gpu_properimage/docs/real_folder_cpu_gpu_subtract.csv
 ```
 
@@ -85,6 +87,7 @@ Export CPU/GPU subtraction FITS outputs:
 python gpu_properimage/benchmarks/export_subtract_results.py \
   --ref-dir data/ref \
   --new-dir data/new \
+  --mode default_beta_shift \
   --output-dir res \
   --manifest res/manifest.csv
 ```

@@ -18,7 +18,7 @@ Key challenges:
 - SingleImage internal state needs GPU refactor
 
 ## Expected speedup
-8-20x for 4096² images on RTX 3060+
+8-20x for 4096² images on a CUDA-capable GPU
 
 ## Implementation status
 - Added `subtract(..., use_gpu=True)` as an explicit opt-in GPU path.

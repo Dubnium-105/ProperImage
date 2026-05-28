@@ -19,6 +19,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+DEFAULT_REF_DIR = REPO_ROOT / "data" / "ref"
+DEFAULT_NEW_DIR = REPO_ROOT / "data" / "new"
+DEFAULT_OUTPUT_DIR = REPO_ROOT / "res"
+DEFAULT_MANIFEST = DEFAULT_OUTPUT_DIR / "manifest.csv"
+
 
 CSV_COLUMNS = [
     "mode",
@@ -33,6 +38,25 @@ CSV_COLUMNS = [
     "output",
 ]
 
+MODE_PARAMS = {
+    "fixed_beta_no_shift": {
+        "align": False,
+        "iterative": False,
+        "beta": False,
+        "shift": False,
+        "fitted_psf": True,
+        "smooth_psf": False,
+    },
+    "default_beta_shift": {
+        "align": False,
+        "iterative": False,
+        "beta": True,
+        "shift": True,
+        "fitted_psf": True,
+        "smooth_psf": False,
+    },
+}
+
 
 def add_torch_cuda_dll_path():
     try:
@@ -42,7 +66,8 @@ def add_torch_cuda_dll_path():
 
     torch_lib = Path(torch.__file__).resolve().parent / "lib"
     if torch_lib.exists():
-        os.environ["PATH"] = f"{torch_lib}{os.pathsep}{os.environ['PATH']}"
+        current_path = os.environ.get("PATH", "")
+        os.environ["PATH"] = f"{torch_lib}{os.pathsep}{current_path}"
         if hasattr(os, "add_dll_directory"):
             os.add_dll_directory(str(torch_lib))
 
@@ -100,14 +125,7 @@ def write_fits(output, image, ref, new, backend, mode, elapsed_ms):
 
 
 def run_one(subtract, cp, ref, new, backend, use_gpu, mode, out_dir):
-    params = {
-        "align": False,
-        "iterative": False,
-        "beta": True,
-        "shift": True,
-        "fitted_psf": True,
-        "smooth_psf": False,
-    }
+    params = MODE_PARAMS[mode]
     gc.collect()
     if use_gpu:
         cp.get_default_memory_pool().free_all_blocks()
@@ -145,13 +163,19 @@ def round_value(value):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ref-dir", type=Path, default=Path("data/ref"))
-    parser.add_argument("--new-dir", type=Path, default=Path("data/new"))
-    parser.add_argument("--output-dir", type=Path, default=Path("res"))
+    parser.add_argument("--ref-dir", type=Path, default=DEFAULT_REF_DIR)
+    parser.add_argument("--new-dir", type=Path, default=DEFAULT_NEW_DIR)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--mode",
+        choices=sorted(MODE_PARAMS),
+        default="default_beta_shift",
+        help="Subtraction mode to export.",
+    )
     parser.add_argument(
         "--manifest",
         type=Path,
-        default=Path("res/manifest.csv"),
+        default=DEFAULT_MANIFEST,
     )
     return parser.parse_args()
 
@@ -178,7 +202,7 @@ def main():
                     new,
                     backend,
                     use_gpu,
-                    "default_beta_shift",
+                    args.mode,
                     args.output_dir,
                 )
             )

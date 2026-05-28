@@ -30,6 +30,8 @@ import scipy.optimize
 import torch
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 BASE_COLUMNS = [
     "Pixels",
     "K",
@@ -475,7 +477,12 @@ def parse_args():
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("gpu_properimage/docs/accel7_production_benchmark.csv"),
+        default=(
+            REPO_ROOT
+            / "gpu_properimage"
+            / "docs"
+            / "accel7_production_benchmark.csv"
+        ),
     )
     return parser.parse_args()
 

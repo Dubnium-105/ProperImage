@@ -17,6 +17,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+DEFAULT_REF = REPO_ROOT / "data" / "aligned_eso085-030-004.fit"
+DEFAULT_NEW = REPO_ROOT / "data" / "aligned_eso085-030-005.fit"
+DEFAULT_OUTPUT = (
+    REPO_ROOT
+    / "gpu_properimage"
+    / "docs"
+    / "real_data_subtract_cpu_gpu.csv"
+)
+
 
 CSV_COLUMNS = [
     "Mode",
@@ -48,6 +57,25 @@ CSV_COLUMNS = [
     "S mean abs error",
 ]
 
+MODE_PARAMS = {
+    "fixed_beta_no_shift": {
+        "align": False,
+        "iterative": False,
+        "beta": False,
+        "shift": False,
+        "fitted_psf": True,
+        "smooth_psf": False,
+    },
+    "default_beta_shift": {
+        "align": False,
+        "iterative": False,
+        "beta": True,
+        "shift": True,
+        "fitted_psf": True,
+        "smooth_psf": False,
+    },
+}
+
 
 def add_torch_cuda_dll_path():
     """Let CuPy find NVRTC DLLs when a CUDA Torch wheel provides them."""
@@ -58,7 +86,8 @@ def add_torch_cuda_dll_path():
 
     path = Path(torch.__file__).resolve().parent / "lib"
     if path.exists():
-        os.environ["PATH"] = f"{path}{os.pathsep}{os.environ['PATH']}"
+        current_path = os.environ.get("PATH", "")
+        os.environ["PATH"] = f"{path}{os.pathsep}{current_path}"
         if hasattr(os, "add_dll_directory"):
             os.add_dll_directory(str(path))
 
@@ -154,12 +183,12 @@ def parse_args():
     parser.add_argument(
         "--ref",
         type=Path,
-        default=Path("data/aligned_eso085-030-004.fit"),
+        default=DEFAULT_REF,
     )
     parser.add_argument(
         "--new",
         type=Path,
-        default=Path("data/aligned_eso085-030-005.fit"),
+        default=DEFAULT_NEW,
     )
     parser.add_argument(
         "--ref-dir",
@@ -176,7 +205,14 @@ def parse_args():
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("gpu_properimage/docs/real_data_subtract_cpu_gpu.csv"),
+        default=DEFAULT_OUTPUT,
+    )
+    parser.add_argument(
+        "--modes",
+        nargs="+",
+        choices=sorted(MODE_PARAMS),
+        default=["fixed_beta_no_shift", "default_beta_shift"],
+        help="Subtraction modes to run.",
     )
     return parser.parse_args()
 
@@ -224,34 +260,10 @@ def main():
 
     from properimage import subtract
 
-    modes = [
-        (
-            "fixed_beta_no_shift",
-            {
-                "align": False,
-                "iterative": False,
-                "beta": False,
-                "shift": False,
-                "fitted_psf": True,
-                "smooth_psf": False,
-            },
-        ),
-        (
-            "default_beta_shift",
-            {
-                "align": False,
-                "iterative": False,
-                "beta": True,
-                "shift": True,
-                "fitted_psf": True,
-                "smooth_psf": False,
-            },
-        ),
-    ]
-
     rows = []
     for ref, new in discover_pairs(args):
-        for name, params in modes:
+        for name in args.modes:
+            params = MODE_PARAMS[name]
             print(f"running {name}: {ref.name} -> {new.name}")
             rows.append(row_for_mode(subtract, cp, ref, new, name, params))
 
