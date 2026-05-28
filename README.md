@@ -51,16 +51,41 @@ To create a proper-subtraction of images:
 
 Where `D`, `P`, `Scorr` refer to the images defined by the same name in [Zackay & Ofek](https://iopscience.iop.org/article/10.3847/0004-637X/830/1/27/meta) paper.
 
-For CUDA acceleration, install a CuPy build that matches your CUDA runtime and
-enable the FFT backend explicitly:
+### GPU-accelerated subtraction
+
+`subtract()` also has an opt-in CuPy/cuFFT backend for the FFT-heavy
+subtraction path. The CPU path remains the default. To use the GPU path, install
+a CuPy wheel that matches your local CUDA runtime, then pass `use_gpu=True`.
+For CUDA 12 installations:
 
 ```console
 $ pip install cupy-cuda12x
 ```
 
 ```python
->>> D, P, Scorr, mask = subtract(ref=ref_path, new=new_path, use_gpu=True)
+>>> from properimage.operations import subtract
+>>> D, P, Scorr, mask = subtract(
+...     ref=ref_path,
+...     new=new_path,
+...     fitted_psf=True,
+...     beta=True,
+...     shift=True,
+...     use_gpu=True,
+... )
 ```
+
+If CuPy is not installed, or if it does not match the available CUDA runtime,
+`use_gpu=True` raises a `RuntimeError` with an installation hint. Leave
+`use_gpu=False` or omit the argument to use the existing CPU backend.
+
+Current GPU coverage is focused on FFT/IFFT, Fourier-domain shifts, and the
+repeated optimizer residual calculations. Image loading, PSF modeling,
+background estimation, and the SciPy optimizer itself still run on CPU, so the
+largest gains appear when `beta` and/or `shift` optimization performs repeated
+frequency-domain work.
+
+Additional benchmark scripts and result notes live in
+[`gpu_properimage/docs`](gpu_properimage/docs/README.md).
 
 For the full documentation refer to [readthedocs](https://properimage.readthedocs.io).
 
