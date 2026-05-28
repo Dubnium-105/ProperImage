@@ -1,40 +1,47 @@
 # ProperImage GPU Acceleration Status
 
-## 当前状态 (2026-05-27)
+## Current Status (2026-05-28)
 
-### 两条加速路线
+### Acceleration Tracks
 
-| 方案 | 路径 | 方法 | 仓库 | 进度 |
-|------|------|------|------|------|
-| 方案7 | FFT频域 | CuPy/cuFFT | **本仓库** | 📋 规划中 |
-| 方案8 | 空间域 | CUDA fused kernel | Dubnium-105/ois | 🔧 gpu-ois-v0.2分支 完成TDD |
+| Plan | Path | Method | Repository | Status |
+|------|------|--------|------------|--------|
+| Plan 7 | FFT domain | CuPy/cuFFT | This repository | Implemented and validated on real FITS data |
+| Plan 8 | Spatial domain | CUDA fused kernel | Dubnium-105/ois | Implemented on the `gpu-ois-v0.2` branch |
 
-### 方案7 详细状态
+### Plan 7 Scope
 
-**目标**: 加速 properimage/operations.py 的 subtract() 函数
+**Target**: accelerate `properimage.operations.subtract()`.
 
-**瓶颈分析** (codex-proxy + 人工交叉验证):
-- scipy.optimize 回调内反复 IFFT: 50-90%
-- 方差校正 V_en/V_er FFT/IFFT: 20-40%
-- PSF 渲染 + 背景: 5-20%
+**Main bottlenecks**:
+- Repeated IFFT calls inside `scipy.optimize` callbacks.
+- Final variance-correction FFT/IFFT work.
+- PSF rendering and background estimation.
 
-**加速方案** (按改动量):
+**Implemented**:
+- Added `subtract(..., use_gpu=True)` as an explicit CuPy/cuFFT backend.
+- Added a CuPy Fourier-domain shift implementation for the GPU path.
+- Kept residual images and masks on GPU inside optimizer callbacks, returning
+  only scalar costs to SciPy.
+- Preserved the existing CPU path as the default behavior.
+- Normalized scalar masks to full-size boolean masks so real FITS inputs work
+  in the optimizer cost slicing path.
+- Added benchmark and export scripts under `gpu_properimage/benchmarks/`.
+- Recorded synthetic and real-data CPU/GPU comparisons under
+  `gpu_properimage/docs/`.
 
-| # | 改动量 | 方案 | 预期加速 |
-|---|--------|------|---------|
-| 1 | 小 | pyfftw 显式配置 plan 缓存/线程 | 1.2-3x |
-| 2 | 小 | 减少 beta/shift 优化迭代 | 2-10x |
-| 3 | 大 | CuPy/cuFFT 全路径常驻 GPU | 8-20x |
+**Current limitations**:
+- `SingleImage` construction, PSF rendering, and SEP background estimation are
+  still CPU-side.
+- `scipy.optimize` remains CPU-side, although repeated FFT/IFFT work can now
+  run on GPU.
+- The installed CuPy package must match the host CUDA runtime.
 
-**关键挑战**:
-- scipy.optimize 在 CPU，cost() 必须最小化 GPU↔CPU 搬运
-- sep.Background (C 库) 无 GPU 等价实现
-- fourier_shift 内部用 numpy FFT，是 pyfftw/CuPy 盲区
-- SingleImage 内部状态 (interped_hat, PSF) 需 GPU 化
+### Documentation
 
-**未开始**: 代码实现尚未启动，优先完成方案8验证后再开。
-
-### 完整分析文档
-
-GPU 加速方案: 见本文件及 PLAN.md
-项目规格: Dubnium-105/ois/gpu_ois/docs/ (SPEC.md, ARCH.md, API.md 等)
+- `PLAN.md`: plan 7 target, bottlenecks, and strategy.
+- `ACCEL7_PRODUCTION_BENCHMARK.md`: synthetic benchmark results.
+- `REAL_DATA_CPU_GPU_SUBTRACT.md`: original two-file real-data benchmark.
+- `REAL_FOLDER_CPU_GPU_SUBTRACT.md`: paired `data/ref` and `data/new`
+  real-data benchmark.
+- `README.md`: documentation index and local artifact policy.

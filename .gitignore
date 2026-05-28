@@ -45,6 +45,7 @@
 
 # Python pyc
 *.pyc
+__pycache__/
 
 # Geany project files
 properimage_proyect
@@ -95,6 +96,11 @@ docs/legacy/
 # Fits files
 *.fits
 *.fits.fz
+
+# Local GPU acceleration test data and generated subtraction outputs
+data/new/
+data/ref/
+res/
 
 # vscode workspaces
 *.code-workspace

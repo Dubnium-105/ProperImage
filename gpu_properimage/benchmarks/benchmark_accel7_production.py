@@ -6,9 +6,8 @@ This benchmark measures the FFT-heavy subtraction core with:
 - GPU pipeline path: Torch CUDA FFT, including host-to-device copies.
 - GPU persistent path: Torch CUDA FFT with image tensors reused on device.
 
-The code intentionally avoids importing properimage so the benchmark can run in
-the production Python 3.9 environment even when optional image-cleaning
-dependencies are unavailable.
+The code intentionally avoids importing properimage so the benchmark can run
+even when optional image-cleaning dependencies are unavailable.
 """
 
 from __future__ import annotations

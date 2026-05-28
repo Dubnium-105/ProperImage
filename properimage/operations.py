@@ -190,6 +190,8 @@ def subtract(
 
     t0 = time.time()
     mix_mask = np.ma.mask_or(new.data.mask, ref.data.mask)
+    if np.isscalar(mix_mask) or getattr(mix_mask, "shape", ()) == ():
+        mix_mask = np.zeros(new.data.shape, dtype=bool)
 
     zps, meanmags = u.transparency([ref, new])
     ref.zp = zps[0]

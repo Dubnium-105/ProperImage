@@ -4,20 +4,16 @@ Date: 2026-05-28
 
 ## Environment
 
-- GPU: NVIDIA GeForce RTX 5070, 12 GB VRAM
-- Driver: 595.79
-- CUDA runtime used by benchmark: Torch CUDA 12.8
-- Python: `E:\application\py395\python.exe` 3.9.5
+- GPU: CUDA-capable NVIDIA GPU
+- Python: 3.9
 - NumPy: 1.26.4
 - SciPy: 1.13.1
-- Torch: 2.7.0+cu128
-- CuPy: unavailable in this environment because package installation was
-  blocked by the configured network/proxy.
+- Torch: CUDA-enabled build, used for the synthetic cuFFT benchmark
 
 ## Command
 
 ```powershell
-& "E:\application\py395\python.exe" `
+python `
   gpu_properimage\benchmarks\benchmark_accel7_production.py `
   --pixels 1024 2048 4096 `
   --repeats 3 `
