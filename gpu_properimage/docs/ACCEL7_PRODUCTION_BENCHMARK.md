@@ -4,7 +4,7 @@ Date: 2026-05-28
 
 ## Environment
 
-- GPU: CUDA-capable NVIDIA GPU
+- GPU: CUDA-capable GPU
 - Python: 3.9
 - NumPy: 1.26.4
 - SciPy: 1.13.1
@@ -12,12 +12,11 @@ Date: 2026-05-28
 
 ## Command
 
-```powershell
-python `
-  gpu_properimage\benchmarks\benchmark_accel7_production.py `
-  --pixels 1024 2048 4096 `
-  --repeats 3 `
-  --output gpu_properimage\docs\accel7_production_benchmark.csv
+```console
+python gpu_properimage/benchmarks/benchmark_accel7_production.py \
+  --pixels 1024 2048 4096 \
+  --repeats 3 \
+  --output gpu_properimage/docs/accel7_production_benchmark.csv
 ```
 
 The benchmark uses the same cuFFT-backed workload shape intended by plan 7:

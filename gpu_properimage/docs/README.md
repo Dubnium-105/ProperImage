@@ -1,9 +1,9 @@
-# ProperImage GPU Acceleration Docs
+# ProperImage GPU Acceleration Documentation
 
-This folder records acceleration plan 7, the CuPy/cuFFT implementation for
-`properimage.operations.subtract`.
+This folder documents the CuPy/cuFFT implementation and batch scheduling tools
+for GPU-accelerated `properimage.operations.subtract`.
 
-## User-Facing GPU Usage
+## User Usage
 
 The public API defaults to `use_gpu="auto"`: it tries the CuPy/cuFFT backend
 first and falls back to CPU when GPU support is unavailable.
@@ -20,7 +20,7 @@ D, P, Scorr, mask = subtract(
 )
 ```
 
-Install the GPU extra matching the local CUDA runtime before relying on the
+Install the GPU extra matching the target CUDA runtime before relying on the
 automatic GPU path. For CUDA 12 installations:
 
 ```console
@@ -55,10 +55,10 @@ The following stages are still CPU-side:
 This means GPU speedups are most visible for `beta=True` and/or `shift=True`,
 where the optimizer repeatedly evaluates FFT/IFFT-heavy residuals.
 
-## Benchmark And Export Commands
+## Batch Processing
 
-Batch subtraction with CPU/GPU scheduling and one worker per visible CUDA
-device:
+Batch subtraction can keep CPU preprocessing and CUDA work active across many
+paired FITS files:
 
 ```console
 properimage-subtract-batch \
@@ -69,8 +69,12 @@ properimage-subtract-batch \
   --prefetch 4
 ```
 
-For local virtualized multi-GPU validation, require at least two CUDA devices
-and repeat the same real-data workload as a stress test:
+The command writes a manifest CSV with per-pair device id, elapsed time, finite
+status, output paths, and failure details. `--devices cpu` or `--use-gpu false`
+forces the CPU path.
+
+For multi-GPU validation, require at least two CUDA devices and repeat the same
+workload as a stress test:
 
 ```console
 properimage-subtract-batch \
@@ -83,9 +87,59 @@ properimage-subtract-batch \
   --require-multi-gpu
 ```
 
-The command writes a manifest CSV with per-pair device id, elapsed time, finite
-status, output paths, and failure details. `--devices cpu` or `--use-gpu false`
-forces the CPU path.
+## Benchmark Commands
+
+The benchmark CSV files in this directory record one development environment's
+measurements. Treat the values as reference data for regression checks, not as
+portable hardware claims. Re-run the scripts on target systems before choosing
+production defaults.
+
+Single-GPU memory and VRAM stress test:
+
+```console
+python gpu_properimage/benchmarks/stress_single_gpu_memory.py \
+  --ref-dir data/ref \
+  --new-dir data/new \
+  --rounds 5 \
+  --device 0 \
+  --prefetch 2 \
+  --gpu-workers 1 \
+  --no-beta \
+  --no-shift \
+  --output gpu_properimage/docs/single_gpu_memory_stress.csv
+```
+
+Single-GPU throughput sweep:
+
+```console
+python gpu_properimage/benchmarks/benchmark_single_gpu_throughput.py \
+  --ref-dir data/ref \
+  --new-dir data/new \
+  --device 0 \
+  --repeat-pairs 2 \
+  --gpu-workers 1 2 \
+  --prefetch 1 2 3 4 \
+  --warmup \
+  --no-beta \
+  --no-shift \
+  --output gpu_properimage/docs/single_gpu_throughput_sweep.csv
+```
+
+Extended single-GPU worker sweep:
+
+```console
+python gpu_properimage/benchmarks/benchmark_single_gpu_throughput.py \
+  --ref-dir data/ref \
+  --new-dir data/new \
+  --device 0 \
+  --repeat-pairs 2 \
+  --gpu-workers 3 4 6 8 \
+  --prefetch 2 3 4 6 8 \
+  --warmup \
+  --no-beta \
+  --no-shift \
+  --output gpu_properimage/docs/single_gpu_throughput_sweep_more_workers.csv
+```
 
 Synthetic production-style benchmark:
 
@@ -152,17 +206,23 @@ the two folders contain the same number of files.
 - `REAL_DATA_CPU_GPU_SUBTRACT.md`: CPU/GPU subtraction test for the original
   two FITS files in `data/`.
 - `REAL_FOLDER_CPU_GPU_SUBTRACT.md`: CPU/GPU subtraction test for three paired
-  FITS files from local `data/ref` and `data/new`.
+  FITS files from `data/ref` and `data/new`.
+- `SINGLE_GPU_MEMORY_STRESS.md`: repeated single-GPU memory/VRAM stress test.
+- `SINGLE_GPU_THROUGHPUT_SWEEP.md`: single-GPU throughput sweep for the
+  bundled real FITS test workflow.
 
 ## CSV Outputs
 
 - `accel7_production_benchmark.csv`
 - `real_data_subtract_cpu_gpu.csv`
 - `real_folder_cpu_gpu_subtract.csv`
+- `single_gpu_memory_stress.csv`
+- `single_gpu_throughput_sweep.csv`
+- `single_gpu_throughput_sweep_more_workers.csv`
 
-## Local Artifacts
+## Ignored Artifacts
 
-The large local FITS input/output artifacts are intentionally ignored:
+Large FITS input/output artifacts are intentionally ignored:
 
 - `data/ref/`
 - `data/new/`

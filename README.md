@@ -117,7 +117,7 @@ $ properimage-subtract-batch --ref-dir data/ref --new-dir data/new \
 ```
 
 `devices="auto"` uses all CUDA devices visible to CuPy, including virtualized
-devices exposed by the local CUDA runtime. Use `devices="cpu"` or
+devices exposed by the target CUDA runtime. Use `devices="cpu"` or
 `--use-gpu false` to force CPU execution.
 
 Additional benchmark scripts and result notes live in

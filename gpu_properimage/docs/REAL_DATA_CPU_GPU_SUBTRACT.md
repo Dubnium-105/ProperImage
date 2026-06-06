@@ -10,20 +10,18 @@ Date: 2026-05-28
 
 ## Dependencies
 
-Install the project runtime dependencies plus a CuPy wheel matching the local
+Install the project runtime dependencies plus a CuPy wheel matching the target
 CUDA runtime. On CUDA 12 systems, for example:
 
-```powershell
-python -m pip install `
-  astroscrappy cupy-cuda12x tinynpydb pyfftw
+```console
+python -m pip install astroscrappy cupy-cuda12x tinynpydb pyfftw
 ```
 
 ## Command
 
-```powershell
-python `
-  gpu_properimage\benchmarks\real_data_subtract_cpu_gpu.py `
-  --output gpu_properimage\docs\real_data_subtract_cpu_gpu.csv
+```console
+python gpu_properimage/benchmarks/real_data_subtract_cpu_gpu.py \
+  --output gpu_properimage/docs/real_data_subtract_cpu_gpu.csv
 ```
 
 ## Results

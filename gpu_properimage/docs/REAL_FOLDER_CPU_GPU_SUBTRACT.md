@@ -14,12 +14,11 @@ Date: 2026-05-28
 
 ## Command
 
-```powershell
-python `
-  gpu_properimage\benchmarks\real_data_subtract_cpu_gpu.py `
-  --ref-dir data\ref `
-  --new-dir data\new `
-  --output gpu_properimage\docs\real_folder_cpu_gpu_subtract.csv
+```console
+python gpu_properimage/benchmarks/real_data_subtract_cpu_gpu.py \
+  --ref-dir data/ref \
+  --new-dir data/new \
+  --output gpu_properimage/docs/real_folder_cpu_gpu_subtract.csv
 ```
 
 ## Results

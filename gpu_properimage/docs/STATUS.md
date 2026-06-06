@@ -32,8 +32,7 @@
   `gpu_properimage/docs/`.
 - Added `AccelerationConfig`, `subtract_batch`, and
   `properimage-subtract-batch` for CPU/GPU worker control, bounded prefetch,
-  task-level multi-GPU dispatch, manifest output, and local multi-GPU stress
-  testing.
+  task-level multi-GPU dispatch, manifest output, and multi-GPU stress testing.
 
 **Current limitations**:
 - `SingleImage` construction, PSF rendering, and SEP background estimation are
@@ -44,6 +43,9 @@
 - The installed CuPy package must match the host CUDA runtime.
 - Multi-GPU support is task-level parallelism; one individual image pair is not
   split across devices.
+- Benchmark results in this folder are reference measurements from one
+  development environment. Re-run the benchmark scripts on target systems
+  before choosing production worker and prefetch settings.
 
 ### Documentation
 
@@ -51,7 +53,11 @@
 - `ACCEL7_PRODUCTION_BENCHMARK.md`: synthetic benchmark results.
 - `batch_acceleration_benchmark.csv`: optional real-folder batch scheduler
   benchmark output.
+- `SINGLE_GPU_MEMORY_STRESS.md`: single-GPU repeated-run memory/VRAM stress
+  test summary.
+- `SINGLE_GPU_THROUGHPUT_SWEEP.md`: single-GPU throughput sweep using the
+  real FITS test workflow.
 - `REAL_DATA_CPU_GPU_SUBTRACT.md`: original two-file real-data benchmark.
 - `REAL_FOLDER_CPU_GPU_SUBTRACT.md`: paired `data/ref` and `data/new`
   real-data benchmark.
-- `README.md`: documentation index and local artifact policy.
+- `README.md`: documentation index and ignored artifact policy.
