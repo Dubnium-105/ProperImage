@@ -71,6 +71,9 @@ gpu-cu12 = [
     "cupy-cuda12x>=13",
 ]
 
+[project.scripts]
+properimage-subtract-batch = "properimage.cli:subtract_batch_main"
+
 [tool.setuptools]
 include-package-data = true
 

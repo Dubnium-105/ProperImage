@@ -57,6 +57,36 @@ where the optimizer repeatedly evaluates FFT/IFFT-heavy residuals.
 
 ## Benchmark And Export Commands
 
+Batch subtraction with CPU/GPU scheduling and one worker per visible CUDA
+device:
+
+```console
+properimage-subtract-batch \
+  --ref-dir data/ref \
+  --new-dir data/new \
+  --output-dir res \
+  --devices auto \
+  --prefetch 4
+```
+
+For local virtualized multi-GPU validation, require at least two CUDA devices
+and repeat the same real-data workload as a stress test:
+
+```console
+properimage-subtract-batch \
+  --ref-dir data/ref \
+  --new-dir data/new \
+  --output-dir res \
+  --devices auto \
+  --prefetch 4 \
+  --stress-repeats 20 \
+  --require-multi-gpu
+```
+
+The command writes a manifest CSV with per-pair device id, elapsed time, finite
+status, output paths, and failure details. `--devices cpu` or `--use-gpu false`
+forces the CPU path.
+
 Synthetic production-style benchmark:
 
 ```console
@@ -64,6 +94,17 @@ python gpu_properimage/benchmarks/benchmark_accel7_production.py \
   --pixels 1024 2048 4096 \
   --repeats 3 \
   --output gpu_properimage/docs/accel7_production_benchmark.csv
+```
+
+Batch scheduling benchmark on real folders:
+
+```console
+python gpu_properimage/benchmarks/benchmark_batch_acceleration.py \
+  --ref-dir data/ref \
+  --new-dir data/new \
+  --modes cpu single-gpu multi-gpu \
+  --repeats 5 \
+  --output gpu_properimage/docs/batch_acceleration_benchmark.csv
 ```
 
 CPU/GPU comparison for a single real pair:

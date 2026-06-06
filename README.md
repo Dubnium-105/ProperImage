@@ -97,6 +97,29 @@ background estimation, and the SciPy optimizer itself still run on CPU, so the
 largest gains appear when `beta` and/or `shift` optimization performs repeated
 frequency-domain work.
 
+For folder-scale production runs, use the batch API or CLI to keep CPU
+preprocessing and one or more CUDA devices busy:
+
+```python
+>>> from properimage import AccelerationConfig, subtract_batch
+>>> result = subtract_batch(
+...     [(ref_path, new_path), ...],
+...     output_dir="res",
+...     acceleration=AccelerationConfig(devices="auto", prefetch=4),
+...     use_gpu="auto",
+... )
+>>> result.throughput_pairs_per_s
+```
+
+```console
+$ properimage-subtract-batch --ref-dir data/ref --new-dir data/new \
+    --output-dir res --devices auto --prefetch 4
+```
+
+`devices="auto"` uses all CUDA devices visible to CuPy, including virtualized
+devices exposed by the local CUDA runtime. Use `devices="cpu"` or
+`--use-gpu false` to force CPU execution.
+
 Additional benchmark scripts and result notes live in
 [`gpu_properimage/docs`](gpu_properimage/docs/README.md).
 

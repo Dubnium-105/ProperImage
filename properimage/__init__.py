@@ -16,8 +16,24 @@ of CCD images. The methodology follows a hypothesis test scheme.
 
 __version__ = "0.7.3"
 
+from .acceleration import (
+    AccelerationConfig,
+    clear_acceleration_cache,
+    configure_acceleration,
+    get_acceleration_config,
+    subtract_batch,
+)
 from .operations import coadd, subtract
 from .single_image import SingleImage
 
 
-__all__ = ["subtract", "coadd", "SingleImage"]
+__all__ = [
+    "subtract",
+    "subtract_batch",
+    "coadd",
+    "SingleImage",
+    "AccelerationConfig",
+    "configure_acceleration",
+    "get_acceleration_config",
+    "clear_acceleration_cache",
+]

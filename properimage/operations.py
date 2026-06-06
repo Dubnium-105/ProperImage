@@ -37,6 +37,7 @@ from scipy.ndimage import fourier_shift
 import sep
 
 from . import utils as u
+from .acceleration import get_acceleration_config, resolve_cuda_devices
 from .single_image import SingleImage as si
 
 try:
@@ -58,8 +59,8 @@ logger = logging.getLogger(__name__)
 aa.PIXEL_TOL = 0.5
 eps = np.finfo(np.float64).eps
 OPT_BORDER = 100  # Border size for optimization cost calculation
-_GPU_BACKEND_ERROR = None
-_GPU_BACKEND_READY = None
+_GPU_BACKEND_ERROR = {}
+_GPU_BACKEND_READY = {}
 
 
 def _cupy_fourier_shift(array, shift):
@@ -73,7 +74,7 @@ def _cupy_fourier_shift(array, shift):
     return array * cp.exp(-2j * cp.pi * phase)
 
 
-def _resolve_fft_backend(use_gpu):
+def _resolve_fft_backend(use_gpu, acceleration=None):
     """Return FFT helpers for the requested backend."""
     if use_gpu in (False, "off", "cpu", None):
         return np, _fftwn, _ifftwn, fourier_shift, np.asarray, False
@@ -87,18 +88,28 @@ def _resolve_fft_backend(use_gpu):
             "use_gpu must be one of True, False, or 'auto'."
         )
 
-    if not _cupy_backend_ready():
+    config = acceleration or get_acceleration_config()
+    devices = resolve_cuda_devices(config, strict=strict_gpu)
+    device_id = devices[0] if devices else None
+
+    if not _cupy_backend_ready(device_id):
         message = (
             "CuPy/cuFFT backend is unavailable. Install a CUDA-matched "
             "CuPy extra such as properimage[gpu-cu12] or "
             "properimage[gpu-cu11]."
         )
-        if _GPU_BACKEND_ERROR is not None:
-            message = f"{message} Original error: {_GPU_BACKEND_ERROR}"
+        if _GPU_BACKEND_ERROR.get(device_id) is not None:
+            message = (
+                f"{message} Original error: "
+                f"{_GPU_BACKEND_ERROR[device_id]}"
+            )
         if strict_gpu:
             raise RuntimeError(message)
         logger.info("%s Falling back to CPU FFT backend.", message)
         return np, _fftwn, _ifftwn, fourier_shift, np.asarray, False
+
+    if device_id is not None:
+        cp.cuda.Device(device_id).use()
 
     return (
         cp,
@@ -110,16 +121,16 @@ def _resolve_fft_backend(use_gpu):
     )
 
 
-def _cupy_backend_ready():
+def _cupy_backend_ready(device_id=None):
     """Check whether CuPy can run a small FFT on the active CUDA device."""
     global _GPU_BACKEND_ERROR, _GPU_BACKEND_READY
 
-    if _GPU_BACKEND_READY is not None:
-        return _GPU_BACKEND_READY
+    if device_id in _GPU_BACKEND_READY:
+        return _GPU_BACKEND_READY[device_id]
 
     if cp is None:
-        _GPU_BACKEND_ERROR = "CuPy is not installed."
-        _GPU_BACKEND_READY = False
+        _GPU_BACKEND_ERROR[device_id] = "CuPy is not installed."
+        _GPU_BACKEND_READY[device_id] = False
         return False
 
     _add_torch_cuda_dll_directory()
@@ -127,15 +138,22 @@ def _cupy_backend_ready():
     try:
         if cp.cuda.runtime.getDeviceCount() < 1:
             raise RuntimeError("No CUDA devices were reported by CuPy.")
-        probe = cp.ones((4, 4), dtype=cp.float32)
-        cp.fft.fftn(probe)
-        cp.cuda.Stream.null.synchronize()
-        _GPU_BACKEND_READY = True
-        _GPU_BACKEND_ERROR = None
+        context = cp.cuda.Device(device_id) if device_id is not None else None
+        if context is None:
+            probe = cp.ones((4, 4), dtype=cp.float32)
+            cp.fft.fftn(probe)
+            cp.cuda.Stream.null.synchronize()
+        else:
+            with context:
+                probe = cp.ones((4, 4), dtype=cp.float32)
+                cp.fft.fftn(probe)
+                cp.cuda.Stream.null.synchronize()
+        _GPU_BACKEND_READY[device_id] = True
+        _GPU_BACKEND_ERROR[device_id] = None
     except Exception as exc:
-        _GPU_BACKEND_READY = False
-        _GPU_BACKEND_ERROR = exc
-    return _GPU_BACKEND_READY
+        _GPU_BACKEND_READY[device_id] = False
+        _GPU_BACKEND_ERROR[device_id] = exc
+    return _GPU_BACKEND_READY[device_id]
 
 
 def _add_torch_cuda_dll_directory():
@@ -169,6 +187,7 @@ def subtract(
     iterative=False,
     fitted_psf=True,
     use_gpu="auto",
+    acceleration=None,
 ):
     """
     Subtract a pair of SingleImage instances.
@@ -201,6 +220,9 @@ def subtract(
         Default is "auto", which uses GPU when a compatible CuPy/CUDA
         backend is available and otherwise falls back to CPU. Set True to
         require GPU or False to force CPU.
+    acceleration : AccelerationConfig, optional
+        Runtime device and worker configuration. Most users can leave this
+        unset and rely on the process-wide defaults.
 
     Returns:
     --------
@@ -255,7 +277,9 @@ def subtract(
     if new.data.data.shape != ref.data.data.shape:
         raise ValueError("N and R arrays are of different size")
 
-    xp, fftn, ifftn, fshift, to_cpu, using_gpu = _resolve_fft_backend(use_gpu)
+    xp, fftn, ifftn, fshift, to_cpu, using_gpu = _resolve_fft_backend(
+        use_gpu, acceleration=acceleration
+    )
 
     t0 = time.time()
     mix_mask = np.ma.mask_or(new.data.mask, ref.data.mask)
@@ -332,6 +356,9 @@ def subtract(
     def to_scalar(value):
         return float(to_cpu(value)) if using_gpu else value
 
+    def optimizer_scalar(value):
+        return float(np.asarray(value).ravel()[0])
+
     def masked_abs_sum(array, border=0, mean_normalized=False):
         real_array = array.real
         mask = backend_mask
@@ -349,7 +376,7 @@ def subtract(
         if shift:  # beta==True & shift==True
 
             def cost(vec):
-                b, dx, dy = vec
+                b, dx, dy = [optimizer_scalar(item) for item in vec]
                 gammap = gamma / xp.sqrt(new.var**2 + b**2 * ref.var**2)
                 norm = xp.sqrt(norm_a + norm_b * b**2)
                 dhn = D_hat_n / norm
@@ -392,6 +419,7 @@ def subtract(
         elif iterative:  # beta==True & shift==False & iterative==True
 
             def F(b):
+                b = optimizer_scalar(b)
                 gammap = gamma / xp.sqrt(new.var**2 + b**2 * ref.var**2)
                 norm = xp.sqrt(norm_a + norm_b * b**2)
                 b_n = (
@@ -424,6 +452,7 @@ def subtract(
         else:  # beta==True & shift==False & iterative==False
 
             def F(b):
+                b = optimizer_scalar(b)
                 gammap = gamma / xp.sqrt(new.var**2 + b**2 * ref.var**2)
                 norm = xp.sqrt(norm_a + norm_b * b**2)
                 b_n = (
@@ -459,7 +488,7 @@ def subtract(
             dhr = D_hat_r / norm
 
             def cost(vec):
-                dx, dy = vec
+                dx, dy = [optimizer_scalar(item) for item in vec]
                 b_n = (
                     ifftn(dhn, norm="ortho")
                     - ifftn(fshift(dhr, (dx, dy)), norm="ortho") * b
