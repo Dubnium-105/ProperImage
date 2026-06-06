@@ -66,12 +66,17 @@ properimage-subtract-batch \
   --new-dir data/new \
   --output-dir res \
   --devices auto \
-  --prefetch 4
+  --auto-tune
 ```
 
 The command writes a manifest CSV with per-pair device id, elapsed time, finite
 status, output paths, and failure details. `--devices cpu` or `--use-gpu false`
 forces the CPU path.
+
+`--auto-tune` measures a bounded set of candidate worker and prefetch settings
+on a sample of the workload, then runs the full batch with the fastest
+successful configuration. For deterministic operation, omit `--auto-tune` and
+set `--cpu-workers`, `--gpu-workers`, and `--prefetch` explicitly.
 
 For multi-GPU validation, require at least two CUDA devices and repeat the same
 workload as a stress test:

@@ -33,6 +33,8 @@
 - Added `AccelerationConfig`, `subtract_batch`, and
   `properimage-subtract-batch` for CPU/GPU worker control, bounded prefetch,
   task-level multi-GPU dispatch, manifest output, and multi-GPU stress testing.
+- Added `tune_acceleration()` and CLI `--auto-tune` to measure candidate
+  worker/prefetch settings on a workload sample before running a full batch.
 
 **Current limitations**:
 - `SingleImage` construction, PSF rendering, and SEP background estimation are

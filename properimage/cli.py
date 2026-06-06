@@ -14,6 +14,7 @@ from .acceleration import (
     get_cuda_device_report,
     resolve_cuda_devices,
     subtract_batch,
+    tune_acceleration,
 )
 
 
@@ -82,6 +83,13 @@ def build_subtract_batch_parser():
     parser.add_argument("--inf-loss", type=float, default=0.25)
     parser.add_argument("--stress-repeats", type=int, default=1)
     parser.add_argument("--require-multi-gpu", action="store_true")
+    parser.add_argument(
+        "--auto-tune",
+        action="store_true",
+        help="Measure candidate worker settings before running the full batch.",
+    )
+    parser.add_argument("--tune-sample-size", type=int, default=6)
+    parser.add_argument("--tune-max-trials", type=int, default=8)
     return parser
 
 
@@ -125,19 +133,55 @@ def subtract_batch_main(argv=None):
     if args.stress_repeats > 1:
         pairs = pairs * args.stress_repeats
     manifest = args.manifest or str(Path(args.output_dir) / "manifest.csv")
+    subtract_kwargs = {
+        "use_gpu": _normalize_use_gpu(args.use_gpu),
+        "align": args.align,
+        "smooth_psf": args.smooth_psf,
+        "fitted_psf": not args.no_fitted_psf,
+        "beta": not args.no_beta,
+        "shift": not args.no_shift,
+        "iterative": args.iterative,
+        "inf_loss": args.inf_loss,
+    }
+    if args.auto_tune:
+        tuning = tune_acceleration(
+            pairs,
+            acceleration=config,
+            max_trials=args.tune_max_trials,
+            sample_size=args.tune_sample_size,
+            **subtract_kwargs,
+        )
+        config = tuning.config
+        best = tuning.best_trial
+        if best is not None:
+            print(
+                "auto-tune selected cpu_workers={cpu} io_workers={io} "
+                "gpu_workers={gpu} prefetch={prefetch} "
+                "throughput={throughput:.3f} pairs/s".format(
+                    cpu=config.cpu_workers,
+                    io=config.io_workers,
+                    gpu=config.gpu_workers,
+                    prefetch=config.prefetch,
+                    throughput=best.throughput_pairs_per_s,
+                )
+            )
+        else:
+            print(
+                "auto-tune used heuristic cpu_workers={cpu} io_workers={io} "
+                "gpu_workers={gpu} prefetch={prefetch}".format(
+                    cpu=config.cpu_workers,
+                    io=config.io_workers,
+                    gpu=config.gpu_workers,
+                    prefetch=config.prefetch,
+                )
+            )
+
     summary = subtract_batch(
         pairs,
         output_dir=args.output_dir,
         manifest=manifest,
         acceleration=config,
-        use_gpu=_normalize_use_gpu(args.use_gpu),
-        align=args.align,
-        smooth_psf=args.smooth_psf,
-        fitted_psf=not args.no_fitted_psf,
-        beta=not args.no_beta,
-        shift=not args.no_shift,
-        iterative=args.iterative,
-        inf_loss=args.inf_loss,
+        **subtract_kwargs,
     )
     print(
         "completed {done}/{total} pairs in {elapsed:.2f} s; "

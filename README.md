@@ -101,11 +101,17 @@ For folder-scale production runs, use the batch API or CLI to keep CPU
 preprocessing and one or more CUDA devices busy:
 
 ```python
->>> from properimage import AccelerationConfig, subtract_batch
+>>> from properimage import AccelerationConfig, subtract_batch, tune_acceleration
+>>> pairs = [(ref_path, new_path), ...]
+>>> tuning = tune_acceleration(
+...     pairs,
+...     acceleration=AccelerationConfig(devices="auto"),
+...     use_gpu="auto",
+... )
 >>> result = subtract_batch(
-...     [(ref_path, new_path), ...],
+...     pairs,
 ...     output_dir="res",
-...     acceleration=AccelerationConfig(devices="auto", prefetch=4),
+...     acceleration=tuning.config,
 ...     use_gpu="auto",
 ... )
 >>> result.throughput_pairs_per_s
@@ -113,7 +119,7 @@ preprocessing and one or more CUDA devices busy:
 
 ```console
 $ properimage-subtract-batch --ref-dir data/ref --new-dir data/new \
-    --output-dir res --devices auto --prefetch 4
+    --output-dir res --devices auto --auto-tune
 ```
 
 `devices="auto"` uses all CUDA devices visible to CuPy, including virtualized

@@ -22,6 +22,7 @@ from .acceleration import (
     configure_acceleration,
     get_acceleration_config,
     subtract_batch,
+    tune_acceleration,
 )
 from .operations import coadd, subtract
 from .single_image import SingleImage
@@ -36,4 +37,5 @@ __all__ = [
     "configure_acceleration",
     "get_acceleration_config",
     "clear_acceleration_cache",
+    "tune_acceleration",
 ]

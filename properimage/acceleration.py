@@ -91,6 +91,32 @@ class SubtractBatchResult:
         return len(self.tasks) / (self.elapsed_ms / 1000.0)
 
 
+@dataclass(frozen=True)
+class TuningTrial:
+    """One measured candidate from acceleration auto tuning."""
+
+    config: AccelerationConfig
+    throughput_pairs_per_s: float
+    elapsed_ms: float
+    failures: int
+    finite: bool
+
+
+@dataclass(frozen=True)
+class TuningResult:
+    """Selected acceleration configuration and candidate measurements."""
+
+    config: AccelerationConfig
+    trials: tuple[TuningTrial, ...] = ()
+    strategy: str = "heuristic"
+
+    @property
+    def best_trial(self):
+        if not self.trials:
+            return None
+        return max(self.trials, key=lambda trial: trial.throughput_pairs_per_s)
+
+
 _DEFAULT_CONFIG = AccelerationConfig()
 _REF_CACHE: dict[tuple[Any, ...], Any] = {}
 _REF_CACHE_LOCK = threading.Lock()
@@ -161,6 +187,144 @@ def default_cpu_workers(config=None):
     cores = os.cpu_count() or 1
     visible_gpus = len(resolve_cuda_devices(config, strict=False))
     return max(1, cores - visible_gpus)
+
+
+def _candidate_values(values, upper):
+    candidates = []
+    for value in values:
+        value = max(1, min(int(value), upper))
+        if value not in candidates:
+            candidates.append(value)
+    return candidates
+
+
+def heuristic_acceleration_config(base=None, use_gpu="auto"):
+    """Return a hardware-aware config without running benchmark trials."""
+    base = base or get_acceleration_config()
+    devices = resolve_cuda_devices(base, strict=False)
+    if use_gpu in (False, "off", "cpu", None) or not devices:
+        workers = resolve_worker_count(
+            base.cpu_workers,
+            max(1, os.cpu_count() or 1),
+        )
+        return replace(
+            base,
+            devices="cpu",
+            cpu_workers=workers,
+            io_workers=resolve_worker_count(base.io_workers, workers),
+            gpu_workers=1,
+            prefetch=max(1, int(base.prefetch)),
+        )
+
+    cores = os.cpu_count() or 1
+    gpu_count = len(devices)
+    cpu_workers = resolve_worker_count(
+        base.cpu_workers, max(1, cores - gpu_count)
+    )
+    per_gpu_workers = resolve_worker_count(
+        base.gpu_workers, min(8, max(1, cpu_workers // gpu_count))
+    )
+    prefetch = max(int(base.prefetch), per_gpu_workers * gpu_count)
+    return replace(
+        base,
+        devices=devices,
+        cpu_workers=cpu_workers,
+        io_workers=resolve_worker_count(base.io_workers, cpu_workers),
+        gpu_workers=per_gpu_workers,
+        prefetch=prefetch,
+    )
+
+
+def tune_acceleration(
+    pairs,
+    *,
+    acceleration=None,
+    use_gpu="auto",
+    max_trials=8,
+    sample_size=6,
+    **subtract_kwargs,
+):
+    """Measure candidate worker settings and return the fastest config."""
+    base = acceleration or get_acceleration_config()
+    heuristic = heuristic_acceleration_config(base, use_gpu=use_gpu)
+    pairs = tuple(pairs)
+    if not pairs:
+        return TuningResult(config=heuristic, strategy="empty")
+
+    sample = pairs[: max(1, min(int(sample_size), len(pairs)))]
+    if heuristic.devices in ("cpu", "off", None, False):
+        cpu_candidates = _candidate_values(
+            [1, heuristic.cpu_workers, (os.cpu_count() or 1)],
+            os.cpu_count() or 1,
+        )
+        configs = [
+            replace(
+                heuristic,
+                cpu_workers=workers,
+                io_workers=workers,
+                gpu_workers=1,
+                prefetch=max(1, min(len(sample), workers)),
+            )
+            for workers in cpu_candidates
+        ]
+    else:
+        cores = os.cpu_count() or 1
+        gpu_candidates = _candidate_values(
+            [1, 2, 4, 6, 8, heuristic.gpu_workers],
+            max(1, cores),
+        )
+        prefetch_candidates = _candidate_values(
+            [1, 2, 3, 4, 6, 8, heuristic.prefetch],
+            max(1, len(sample)),
+        )
+        configs = []
+        for gpu_workers in gpu_candidates:
+            for prefetch in prefetch_candidates:
+                configs.append(
+                    replace(
+                        heuristic,
+                        gpu_workers=gpu_workers,
+                        prefetch=prefetch,
+                    )
+                )
+                if len(configs) >= max_trials:
+                    break
+            if len(configs) >= max_trials:
+                break
+
+    trials = []
+    best = None
+    for config in configs[: max(1, int(max_trials))]:
+        clear_acceleration_cache()
+        result = subtract_batch(
+            sample,
+            acceleration=config,
+            use_gpu=use_gpu,
+            **subtract_kwargs,
+        )
+        finite = all(task.finite for task in result.tasks if task.ok)
+        trial = TuningTrial(
+            config=config,
+            throughput_pairs_per_s=result.throughput_pairs_per_s,
+            elapsed_ms=result.elapsed_ms,
+            failures=len(result.failed),
+            finite=finite,
+        )
+        trials.append(trial)
+        if trial.failures == 0 and trial.finite:
+            if best is None:
+                best = trial
+            elif trial.throughput_pairs_per_s > best.throughput_pairs_per_s:
+                best = trial
+
+    clear_acceleration_cache()
+    if best is None:
+        return TuningResult(
+            config=heuristic, trials=tuple(trials), strategy="heuristic"
+        )
+    return TuningResult(
+        config=best.config, trials=tuple(trials), strategy="measured"
+    )
 
 
 @contextmanager

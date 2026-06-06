@@ -11,6 +11,7 @@ from properimage.acceleration import (
     configure_acceleration,
     get_acceleration_config,
     subtract_batch,
+    tune_acceleration,
 )
 
 
@@ -108,3 +109,50 @@ def test_subtract_batch_keeps_running_after_task_failure(monkeypatch):
 def test_clear_acceleration_cache_is_idempotent():
     clear_acceleration_cache()
     clear_acceleration_cache()
+
+
+def test_tune_acceleration_selects_fastest_measured_config(monkeypatch):
+    import properimage.acceleration as acceleration
+    acceleration_mod = acceleration
+
+    def fake_subtract_batch(pairs, acceleration=None, **kwargs):
+        config = acceleration
+        gpu_workers = int(config.gpu_workers)
+        prefetch = int(config.prefetch)
+        throughput = gpu_workers * 10.0 - abs(prefetch - 2)
+        return acceleration_mod.SubtractBatchResult(
+            tasks=(
+                acceleration_mod.SubtractTaskResult(
+                    index=0,
+                    ref="r",
+                    new="n",
+                    ok=True,
+                    device_id=0,
+                    elapsed_ms=1.0,
+                    finite=True,
+                ),
+            ),
+            elapsed_ms=1000.0 / throughput,
+            devices=(0,),
+            cpu_workers=1,
+            gpu_workers=gpu_workers,
+        )
+
+    monkeypatch.setattr(acceleration, "resolve_cuda_devices", lambda *a, **k: (0,))
+    monkeypatch.setattr(acceleration, "subtract_batch", fake_subtract_batch)
+
+    result = tune_acceleration(
+        [(1, 2)],
+        acceleration=AccelerationConfig(
+            devices="auto", cpu_workers=4, io_workers=4
+        ),
+        max_trials=8,
+        sample_size=1,
+        use_gpu=True,
+    )
+
+    assert result.strategy == "measured"
+    assert result.config.gpu_workers == 8
+    assert result.config.prefetch == 1
+    assert len(result.trials) == 5
+    assert result.best_trial.throughput_pairs_per_s == 79.0
