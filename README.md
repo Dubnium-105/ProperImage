@@ -126,6 +126,29 @@ $ properimage-subtract-batch --ref-dir data/ref --new-dir data/new \
 devices exposed by the target CUDA runtime. Use `devices="cpu"` or
 `--use-gpu false` to force CPU execution.
 
+The CLI pairs FITS files by identical filename in `--ref-dir` and `--new-dir`.
+If names do not match, it falls back to sorted order when both folders contain
+the same number of FITS files. Each output pair writes `D`, `P`, `S_corr`, and
+`mask` FITS files under `--output-dir`, plus a `manifest.csv` with per-pair
+status, device id, timing, finite checks, and output paths.
+
+Common CLI options:
+
+```console
+$ properimage-subtract-batch --ref-dir data/ref --new-dir data/new \
+    --output-dir res --devices auto --auto-tune
+
+$ properimage-subtract-batch --ref-dir data/ref --new-dir data/new \
+    --output-dir res --devices cpu --use-gpu false
+
+$ properimage-subtract-batch --ref-dir data/ref --new-dir data/new \
+    --output-dir res --devices 0 --gpu-workers 6 --prefetch 4
+```
+
+Use `--auto-tune` for first runs on a new machine or workload. For repeated
+production runs, use the measured `--gpu-workers` and `--prefetch` values
+explicitly to avoid spending time on tuning each run.
+
 Additional benchmark scripts and result notes live in
 [`gpu_properimage/docs`](gpu_properimage/docs/README.md).
 

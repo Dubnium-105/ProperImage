@@ -92,114 +92,37 @@ properimage-subtract-batch \
   --require-multi-gpu
 ```
 
-## Benchmark Commands
+## Benchmark Reports
 
 The benchmark CSV files in this directory record one development environment's
 measurements. Treat the values as reference data for regression checks, not as
 portable hardware claims. Re-run the scripts on target systems before choosing
 production defaults.
 
-Single-GPU memory and VRAM stress test:
+Most users only need the batch CLI above. The benchmark scripts are for
+validation, regression checks, and tuning production worker settings.
+
+| Report | Purpose | Script |
+|---|---|---|
+| `ACCEL7_PRODUCTION_BENCHMARK.md` | Synthetic FFT pipeline benchmark | `benchmark_accel7_production.py` |
+| `REAL_DATA_CPU_GPU_SUBTRACT.md` | CPU/GPU comparison for one FITS pair | `real_data_subtract_cpu_gpu.py` |
+| `REAL_FOLDER_CPU_GPU_SUBTRACT.md` | CPU/GPU comparison for paired folders | `real_data_subtract_cpu_gpu.py` |
+| `SINGLE_GPU_MEMORY_STRESS.md` | Repeated-run RSS/VRAM cleanup check | `stress_single_gpu_memory.py` |
+| `SINGLE_GPU_THROUGHPUT_SWEEP.md` | Worker/prefetch throughput sweep | `benchmark_single_gpu_throughput.py` |
+
+Typical validation commands:
 
 ```console
 python gpu_properimage/benchmarks/stress_single_gpu_memory.py \
-  --ref-dir data/ref \
-  --new-dir data/new \
-  --rounds 5 \
-  --device 0 \
-  --prefetch 2 \
-  --gpu-workers 1 \
-  --no-beta \
-  --no-shift \
-  --output gpu_properimage/docs/single_gpu_memory_stress.csv
-```
+  --ref-dir data/ref --new-dir data/new --rounds 5 --device 0
 
-Single-GPU throughput sweep:
-
-```console
 python gpu_properimage/benchmarks/benchmark_single_gpu_throughput.py \
-  --ref-dir data/ref \
-  --new-dir data/new \
-  --device 0 \
-  --repeat-pairs 2 \
-  --gpu-workers 1 2 \
-  --prefetch 1 2 3 4 \
-  --warmup \
-  --no-beta \
-  --no-shift \
-  --output gpu_properimage/docs/single_gpu_throughput_sweep.csv
+  --ref-dir data/ref --new-dir data/new --device 0 --warmup
 ```
 
-Extended single-GPU worker sweep:
-
-```console
-python gpu_properimage/benchmarks/benchmark_single_gpu_throughput.py \
-  --ref-dir data/ref \
-  --new-dir data/new \
-  --device 0 \
-  --repeat-pairs 2 \
-  --gpu-workers 3 4 6 8 \
-  --prefetch 2 3 4 6 8 \
-  --warmup \
-  --no-beta \
-  --no-shift \
-  --output gpu_properimage/docs/single_gpu_throughput_sweep_more_workers.csv
-```
-
-Synthetic production-style benchmark:
-
-```console
-python gpu_properimage/benchmarks/benchmark_accel7_production.py \
-  --pixels 1024 2048 4096 \
-  --repeats 3 \
-  --output gpu_properimage/docs/accel7_production_benchmark.csv
-```
-
-Batch scheduling benchmark on real folders:
-
-```console
-python gpu_properimage/benchmarks/benchmark_batch_acceleration.py \
-  --ref-dir data/ref \
-  --new-dir data/new \
-  --modes cpu single-gpu multi-gpu \
-  --repeats 5 \
-  --output gpu_properimage/docs/batch_acceleration_benchmark.csv
-```
-
-CPU/GPU comparison for a single real pair:
-
-```console
-python gpu_properimage/benchmarks/real_data_subtract_cpu_gpu.py \
-  --ref data/aligned_eso085-030-004.fit \
-  --new data/aligned_eso085-030-005.fit \
-  --modes fixed_beta_no_shift default_beta_shift \
-  --output gpu_properimage/docs/real_data_subtract_cpu_gpu.csv
-```
-
-CPU/GPU comparison for paired folders:
-
-```console
-python gpu_properimage/benchmarks/real_data_subtract_cpu_gpu.py \
-  --ref-dir data/ref \
-  --new-dir data/new \
-  --modes fixed_beta_no_shift default_beta_shift \
-  --output gpu_properimage/docs/real_folder_cpu_gpu_subtract.csv
-```
-
-Export CPU/GPU subtraction FITS outputs:
-
-```console
-python gpu_properimage/benchmarks/export_subtract_results.py \
-  --ref-dir data/ref \
-  --new-dir data/new \
-  --mode default_beta_shift \
-  --output-dir res \
-  --manifest res/manifest.csv
-```
-
-`data/ref` and `data/new` are paired by identical FITS filenames. If filenames
-do not match one-to-one, the benchmark script falls back to sorted order when
-the two folders contain the same number of files.
+Use `gpu_properimage/benchmarks/export_subtract_results.py` only when FITS
+outputs are needed for visual inspection; throughput benchmarks intentionally
+avoid output writes.
 
 ## Documents
 
